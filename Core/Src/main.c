@@ -43,13 +43,15 @@
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 
+SPI_HandleTypeDef hspi1;
+
 TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
-uint8_t estado=1;
+uint8_t estado=0;
 
 uint8_t i=0;
 
@@ -68,7 +70,15 @@ char buffer[10]="";
 uint8_t mostrar=0;
 uint8_t conv_adc_rdy=0;
 uint8_t n=0;
+uint8_t valores_medidos=0;
+uint8_t valores_a_medir=0;
+uint8_t horas=0;
+uint8_t mensaje_iniciar=0;
 
+char msg1[31]="Bienvenido al sitema Datalogger";
+char msg2[30]="Escoga la cantidad de Horas ";
+char msg3[30]="12,24,48 o 72 Horas";
+char msgrx[2]="";
 
 /* USER CODE END PV */
 
@@ -79,8 +89,10 @@ static void MX_ADC1_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 void conversion_adc(void);
+void gestion_led(void);
 
 /* USER CODE END PFP */
 
@@ -156,6 +168,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
   MX_TIM3_Init();
+  MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
   HAL_UART_Transmit(&huart3, (uint8_t *) "Inicio", 6, 100);
   HAL_Delay(100);
@@ -171,9 +184,21 @@ int main(void)
 	  switch(estado)
 	  {
 	  case 0:
+		  gestion_led();
+		  if(mensaje_iniciar==0)
+		  {
+			  HAL_UART_Transmit(&huart2, (uint8_t*)msg1, 31, 500);
+			  HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 4, 500);
+			  HAL_UART_Transmit(&huart2, (uint8_t*)msg2, 30, 500);
+			  HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 4, 500);
+			  HAL_UART_Transmit(&huart2, (uint8_t*)msg3, 30, 500);
+			  HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 4, 500);
+			  HAL_UART_Receive_IT(&huart2,(uint8_t*) msgrx, 2);
+			  mensaje_iniciar=1;
+		  }
 		  break;
 	  case 1:
-
+		  gestion_led();
 		  conversion_adc();
 		  HAL_TIM_Base_Start_IT(&htim3);
 		  if(mostrar && conv_adc_rdy)
@@ -185,9 +210,19 @@ int main(void)
 			  HAL_UART_Transmit(&huart3, (uint8_t*)buffer, sprintf(buffer, "%d", temperatura), 500);
 			  HAL_UART_Transmit(&huart3, (uint8_t*)"\r\n", 4, 500);
 			  mostrar=0;
+			  valores_medidos++;
+			  if(valores_medidos>valores_a_medir)
+			  {
+				  valores_medidos=0;
+				  valores_a_medir=0;
+				  estado=2;
+				  HAL_UART_Transmit(&huart3, (uint8_t*)"FIN", 3, 500);
+			  }
+
 		  }
 		  break;
 	  case 2:
+		  gestion_led();
 	  	  break;
 	  default:
 	  	  break;
@@ -299,6 +334,44 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief SPI1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI1_Init(void)
+{
+
+  /* USER CODE BEGIN SPI1_Init 0 */
+
+  /* USER CODE END SPI1_Init 0 */
+
+  /* USER CODE BEGIN SPI1_Init 1 */
+
+  /* USER CODE END SPI1_Init 1 */
+  /* SPI1 parameter configuration*/
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 10;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI1_Init 2 */
+
+  /* USER CODE END SPI1_Init 2 */
 
 }
 
@@ -431,6 +504,9 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
+
   /*Configure GPIO pin : PC13 */
   GPIO_InitStruct.Pin = GPIO_PIN_13;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -438,9 +514,89 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
+  /*Configure GPIO pins : PB13 PB14 PB15 */
+  GPIO_InitStruct.Pin = GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
 }
 
 /* USER CODE BEGIN 4 */
+void gestion_led(void)
+{
+	switch (estado)
+	{
+	case 0:
+		HAL_GPIO_WritePin(GPIOB,GPIO_PIN_13,GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOB,GPIO_PIN_14,GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOB,GPIO_PIN_15,GPIO_PIN_RESET);
+	break;
+	case 1:
+		HAL_GPIO_WritePin(GPIOB,GPIO_PIN_13,GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOB,GPIO_PIN_14,GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOB,GPIO_PIN_15,GPIO_PIN_RESET);
+	break;
+	case 2:
+		HAL_GPIO_WritePin(GPIOB,GPIO_PIN_13,GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOB,GPIO_PIN_14,GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOB,GPIO_PIN_15,GPIO_PIN_SET);
+	break;
+	}
+}
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+//	HAL_UART_Transmit_IT(&huart2,(uint8_t*) msgrx, 2);
+	HAL_UART_Transmit(&huart2,(uint8_t*) msgrx, 2,100);
+	if(stricmp(msgrx,"12")==0)
+	{
+		HAL_UART_Transmit(&huart2, (uint8_t*)"12", 2, 1000);
+		valores_a_medir=12;
+		estado=1;
+	}
+	else
+	{
+		if(stricmp(msgrx,"24")==0)
+		{
+			HAL_UART_Transmit(&huart2, (uint8_t*)"24", 2, 1000);
+			valores_a_medir=24;
+			estado=1;
+
+		}
+		else
+		{
+			if(stricmp(msgrx,"48")==0)
+			{
+				HAL_UART_Transmit(&huart2, (uint8_t*)"48", 2, 1000);
+				valores_a_medir=48;
+				estado=1;
+
+			}
+			else
+			{
+				if(stricmp(msgrx,"72")==0)
+				{
+					HAL_UART_Transmit(&huart2, (uint8_t*)"72", 2, 1000);
+					valores_a_medir=72;
+					estado=1;
+
+				}
+				else
+				{
+						HAL_UART_Transmit(&huart2, (uint8_t*)"in", 2, 1000);
+						valores_a_medir=72;
+						estado=1;
+
+				}
+			}
+		}
+
+
+	}
+	HAL_UART_Transmit(&huart3, (uint8_t*)"Valor Ajustado", 14, 1000);
+
+}
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	if(htim==&htim3)
